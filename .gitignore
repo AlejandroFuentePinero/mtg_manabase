@@ -52,3 +52,5 @@ reports/
 figures/
 
 .DS_Store
+
+*.egg-info/
