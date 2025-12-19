@@ -1,0 +1,6 @@
+ruff
+pytest
+pytest-cov
+mypy
+ipykernel
+pre-commit

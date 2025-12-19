@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/mtg_mana/__init__.py
+src/mtg_mana_optimiser.egg-info/PKG-INFO
+src/mtg_mana_optimiser.egg-info/SOURCES.txt
+src/mtg_mana_optimiser.egg-info/dependency_links.txt
+src/mtg_mana_optimiser.egg-info/requires.txt
+src/mtg_mana_optimiser.egg-info/top_level.txt
+tests/test_smoke.py
