@@ -1,140 +1,135 @@
-# MTG Manabase Optimiser — Roadmap (foundation-first)
+## MTG Manabase Optimiser — Roadmap (landscape → positioning → recommendations)
 
-This project will be built in layers:
-1) establish a minimal, correct foundation (Chapter 0)
-2) add game mechanics modularly (Chapter 1)
-3) add behaviour/preferences (Chapter 2)
-4) add optimisation + recommendations + visuals (Chapters 3–5)
+This project builds a **probabilistic landscape of mana reliability** for competitive 60-card decks, then lets a user (deck + format + behaviour) see **where they sit in that landscape**, and finally returns **a small number of actionable “best moves”** to improve the deck’s mana architecture.
 
-The intent is to keep each layer independently testable and switchable (including zero-count mechanics).
+Core design principle: **everything is modular and toggleable**, and **turning modules off must reproduce the prior layer**.
 
 ---
 
-## Chapter 0 — Foundation: early-turn mana reliability (v0)
-Purpose: define the “game engine” for turns 1–3 and produce trustworthy baseline probabilities.
-Once this exists, all mechanics and behaviour become add-on modules.
+## Layer 1 — Foundation: the probabilistic landscape (mana reliability)
+Purpose: build a correct baseline engine and then expand it into a “real-deck” landscape by adding mechanics one at a time.
 
-### 0.1 Definitions and shared vocabulary
-- Deck size = 60 only (for now)
-- Turn model: play vs draw
-  - Play: 7-card opener; no draw on turn 1
-  - Draw: 7-card opener; draw on turn 1
-- “Cards seen by turn T” definition (hand + draws + optional look effects later)
-- Primary v0 metrics:
-  - P(hit 2nd land by T2)
-  - P(hit 3rd land by T3)
-  reported separately for play vs draw.
+### ✅ 1.0 Definitions and shared vocabulary
+- ✅ Deck size: **60** (v1 scope)
+- ✅ Play vs draw model (explicit turn order, cards seen by T)
+- ✅ Primary reliability metrics (initial set):
+  - **P(2nd land by T2)**
+  - **P(3rd land by T3)**
+  - **P(4th land by T4)**
+- ✅ Separate reporting for **play vs draw**
 
-### 0.2 Mulligan model (London mulligan, simplified keep heuristic)
-- London mulligan:
-  - Each mulligan: shuffle, draw 7
-  - Keep after m mulligans: bottom m cards (final hand size 7−m)
-- v0 keep policy:
-  - keep decision depends ONLY on land count in the 7-card look
-  - keep-range parameter, e.g. keep lands in {2,3,4,5}
-  - max mulligans parameter (e.g. stop at 5 cards)
-- v0 bottoming policy:
-  - deterministic parameter (simple rule)
-  - minimal version: bottom lands first if excess lands; otherwise bottom spells first
-  - goal is not perfect realism, but a stable baseline to build on.
+### 1.1 Mulligan + keep/bottom policy (behaviour-neutral baseline)
+- London mulligan, parameterised:
+  - keep-range based on land count (v0)
+  - max mulligans
+  - deterministic bottoming rule (simple, stable)
+- Key requirement: with mulligans disabled, simulation matches analytic baseline.
 
-### 0.3 Baseline probability engine
-- Two implementations:
-  1) Analytic baseline (hypergeometric) for “no mulligan, no selection” sanity checks
-  2) Simulation baseline (Monte Carlo) for London mulligan + bottoming
-- The simulation must reduce to the analytic baseline when mulligans are disabled.
+### 1.2 Baseline probability engine (two implementations)
+- ✅ Analytic (hypergeometric) baseline for sanity checks
+- Monte Carlo simulation for mulligans + sequencing rules
+- Acceptance checks:
+  - probabilities in [0, 1]
+  - monotonicity with land count
+  - stable reruns
+  - edge cases (L=0, L=60, always-keep / always-mull settings)
 
-### 0.4 Acceptance checks (Chapter 0 is “done” when)
-- For each land count L in a reasonable range (e.g., 18–28):
-  - produce the four values:
-    - play: P(2 by T2), P(3 by T3)
-    - draw: P(2 by T2), P(3 by T3)
-- Results are stable under reruns (within tolerance) at a fixed seed / large N
-- Edge cases handled cleanly:
-  - L=0 and L=60 (sanity)
-  - keep ranges that make “always keep” or “almost always mull”
-  - max mulligans = 0 vs 1 vs 2+
-- Unit tests exist for:
-  - probability bounds [0,1]
-  - invariants (e.g., P(3 by T3) ≤ P(2 by T2) generally; play vs draw ordering makes sense)
-- One notebook/report exists that visualises the baseline curves.
+### 1.3 Add deck mechanisms (landscape expansion modules)
+Each module is:
+- toggleable (including zero-count behaviour)
+- defined by a minimal policy (not “perfect play”, but consistent and inspectable)
+- tested
+- evaluated for its effect on the baseline curves
 
-Deliverables:
-- `docs/02_v0_rules.md` (exact turn order + mulligan/bottoming rule)
-- baseline curves notebook: land count vs probability (play/draw)
-- core simulation module + tests
+Modules (order roughly from highest signal to highest complexity):
+1) **Taplands / tempo costs** (ETB tapped reduces usable mana on key turns)
+2) **Fetchlands** (first as colour fixing; thinning tracked separately as optional)
+3) **Surveil/scry/top selection** (policy: keep/bin rules, conditional on land needs)
+4) **Cantrips** (mana-gated: only matter if castable; define when they’re cast)
+5) **Ramp** (simple early ramp categories; how it changes land-drop odds)
+
+Deliverable at end of Layer 1:
+- a “landscape runner” that outputs probability curves and (later) utility curves across:
+  - land count
+  - land-type mix knobs (tap %, fetch %, surveil %, utility slots, etc.)
+  - play vs draw
 
 ---
 
-## Chapter 1 — Add game mechanics as modules (v1)
-Purpose: incorporate real deck features while preserving modularity and “zero counts” behavior.
+## Layer 1.5 — Colour feasibility tool (cast spells on curve)
+Purpose: complement “how many lands?” with “**what colours and how many sources?**”.
 
-Mechanics (added one-by-one, each toggleable):
-- Cantrips: “extra looks” only if castable (mana-gated)
-- Top manipulation: scry/surveil decisions when they occur
-- Fetchlands: colour fixing first; thinning tracked separately (optional)
-- Ramp: simple early ramp categories (mana next turn; land-to-battlefield; etc.)
-- Taplands: tempo constraint (ETB tapped reduces usable mana on key turns)
+### 1.5.1 Spell colour requirements model
+- Inputs from decklist:
+  - colours
+  - pip intensity (e.g., **WW vs 1W**)
+  - earliest turn you want to cast
+- Outputs:
+  - probabilistic colour targets: e.g., “P(UU by T2) ≥ threshold”
+  - integrated constraints that can shift the recommended land count / composition
 
-Outputs remain the same as Chapter 0 (plus optional additional metrics), but now conditional on module settings.
-
-Acceptance:
-- Setting all module counts to zero reproduces Chapter 0 outputs.
-- Each module has a minimal policy definition and tests.
-
----
-
-## Chapter 2 — Player behaviour layer (v2)
-Purpose: represent subjective choices as parameters, not hard-coded assumptions.
-
-Introduce a “player profile”:
-- Mulligan aggressiveness: keep ranges, max mulligans
-- Flood vs screw tolerance: weights in an objective/utility function
-- Sequencing preferences: e.g., when to cantrip, when to fetch, keep/bin rules for surveil
-
-Output becomes:
-- probabilities + “utility score” for a given profile
-- sensitivity: how recommendations change with profile knobs
+### 1.5.2 Manabase colour builder (constraint-based)
+- Given a land pool (format legality), propose feasible colour distributions:
+  - basics/duals/fetch/typed/tap/utility
+- The output is **not** a single answer yet; it produces a **feasible region** that optimisation can search inside.
 
 ---
 
-## Chapter 3 — Optimisation engine (v3)
-Purpose: given a deck and constraints, find the best manabase under the chosen player profile.
+## Layer 2 — User positioning (deck + format + behaviour → where you sit)
+Purpose: let a user input their deck + preferences and get a clear diagnosis.
 
-Decision variables (initially):
-- total land count
-- mix of land types (basic/typed/tap/fetch/utility)
-- tapland budget / life-loss budget
+Inputs:
+- Decklist-derived features (curve, cantrips/ramp counts, pip requirements)
+- Format constraints (land pool availability, especially fetch legality)
+- Player behaviour knobs:
+  - mulligan aggressiveness
+  - tolerance to screw vs flood
+  - sequencing preferences (when to cantrip, when to fetch, surveil keep/bin rules)
 
-Constraints:
-- colour requirements (added in v3.1 if not earlier)
-- available land pool
-- max taplands, max life loss, etc.
-
-Deliverable:
-- return “best” and “near-best” configurations + tradeoffs.
-
----
-
-## Chapter 4 — Positioning and visual outputs (v4)
-Purpose: make the optimisation understandable.
-
-- Heatmaps that position the current deck vs optimal under the chosen profile
-- “distance to optimal” summary
-- show which constraint is binding (tapland budget, colour, land count, etc.)
+Outputs:
+- The deck’s position on the landscape:
+  - “you are here” on curves/heatmaps
+  - which constraint is binding (tempo, colour, land count, etc.)
+- Sensitivity:
+  - how much the answer changes if behaviour assumptions change
 
 ---
 
-## Chapter 5 — Recommendation system (v5)
-Purpose: actionable changes rather than raw numbers.
+## Layer 3 — Recommendations (top 3 improvement approaches)
+Purpose: turn diagnosis into **actionable edits**, not just charts.
 
-- Suggest minimal edits:
-  - +1 land, -1 spell
-  - swap tapland → untapped source
-  - adjust fetch/typed mix
-- Rank recommendations by improvement per change and by cost (tempo/life/budget)
+### 3.1 Objective / utility function
+Rank configurations by an explicit utility that can weight:
+- early screw risk (missing 2/3/4 land drops)
+- flood risk (late excess lands, if included)
+- tempo costs (taplands)
+- life costs (shock/fetch patterns if applicable)
+- colour-fail risk (missing required pips on curve)
+
+### 3.2 Optimisation / search (practical, not overkill)
+- Decision variables:
+  - total land count
+  - land-type mix (tap/fetch/surveil/utility/basic/dual)
+- Constraints:
+  - colour requirements (Layer 1.5)
+  - format land pool
+  - budgets (tap %, life-loss, utility slots)
+
+### 3.3 Output format: “three moves”
+Return the **top 3 approaches**, each framed as:
+- minimal change (low disruption)
+- moderate change (structural fix)
+- aggressive change (maximises reliability/colour at a cost)
+
+Each recommendation includes:
+- expected gain in the key probabilities (and utility)
+- what you pay (tempo/life/utility slots)
+- what matchups/deck styles it suits (fast vs slow, low vs high curve)
 
 ---
 
-## Notes on colour constraints (planned)
-A later milestone will incorporate “sources needed to cast spells on curve” requirements (e.g., UU by T2), integrated into the same simulation/optimisation framework.
+## “Done” criteria for each layer
+- **Layer 1 done:** baseline engine + module toggles + reproducible landscape curves.
+- **Layer 1.5 done:** colour feasibility constraints integrate cleanly (can fail fast with clear reasons).
+- **Layer 2 done:** user can input deck + behaviour and get a stable “positioning report”.
+- **Layer 3 done:** system returns 3 ranked, explainable upgrade paths under format constraints.
